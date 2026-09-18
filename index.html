@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="description" content="Print shipping labels and simple labels on a Rongta RP425 over Bluetooth.">
+  <title>Label Printer</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='14' width='52' height='36' rx='8' fill='%23007aff'/%3E%3Crect x='16' y='4' width='32' height='16' rx='3' fill='%23fff' stroke='%23007aff' stroke-width='3'/%3E%3Crect x='16' y='40' width='32' height='22' rx='3' fill='%23fff' stroke='%23007aff' stroke-width='3'/%3E%3Cpath d='M22 48h20M22 54h14' stroke='%23007aff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">Label Printer</h1>
+    <button id="conn-pill" class="pill" type="button" aria-live="polite">
+      <span class="dot"></span><span id="conn-label">Connect printer</span>
+    </button>
+  </header>
+
+  <div id="bt-banner" class="banner" hidden>
+    <strong>This browser can't reach Bluetooth printers.</strong>
+    <span>On iPhone, install the free <b>Bluefy</b> browser and open this page in it. You can still design and preview labels here.</span>
+    <div class="banner-actions">
+      <a class="btn small" href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Get Bluefy</a>
+      <button id="copy-link" class="btn small secondary" type="button">Copy this page's link</button>
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" type="button" data-tab="ship" aria-selected="true">Shipping label</button>
+    <button role="tab" type="button" data-tab="quick" aria-selected="false">Quick label</button>
+    <button role="tab" type="button" data-tab="printer" aria-selected="false">Printer</button>
+  </nav>
+
+  <main>
+    <!-- ============================== Shipping label ============================== -->
+    <section id="tab-ship" role="tabpanel">
+      <label id="ship-empty" class="dropzone">
+        <input type="file" class="file-input visually-hidden" accept="application/pdf,.pdf,image/*">
+        <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M12 18v-6M9 15l3-3 3 3"/></svg>
+        <strong>Choose a shipping label</strong>
+        <span>A PDF or screenshot from USPS, UPS, eBay, Etsy, Pirate Ship…</span>
+        <span class="hint">Tip: save the label to the Files app first, then pick it here.</span>
+      </label>
+
+      <div id="ship-loaded" hidden>
+        <div class="file-row">
+          <div class="file-info">
+            <div id="file-name" class="file-name"></div>
+            <div id="pager" class="pager" hidden>
+              <button id="page-prev" type="button" class="icon-btn" aria-label="Previous page">‹</button>
+              <span id="page-label"></span>
+              <button id="page-next" type="button" class="icon-btn" aria-label="Next page">›</button>
+            </div>
+          </div>
+          <label class="btn small secondary">Change file<input type="file" class="file-input visually-hidden" accept="application/pdf,.pdf,image/*"></label>
+        </div>
+
+        <div class="preview-wrap"><canvas id="ship-preview" class="label-preview" aria-label="Label preview"></canvas></div>
+        <p class="label-chip"><span class="label-size-text"></span> · <button type="button" class="link goto-printer">change</button></p>
+
+        <div class="seg" id="crop-mode" role="radiogroup" aria-label="Crop">
+          <button type="button" data-value="auto" role="radio">Auto crop</button>
+          <button type="button" data-value="page" role="radio">Whole page</button>
+          <button type="button" data-value="custom" role="radio">Custom</button>
+        </div>
+        <div class="btn-row">
+          <button id="rotate-btn" type="button" class="btn secondary">↻ Rotate</button>
+          <button id="adjust-btn" type="button" class="btn secondary" aria-expanded="false">Adjust crop</button>
+        </div>
+
+        <div id="crop-panel" hidden>
+          <p class="hint">Drag the box (or its corners) around the label. Drag outside the box to draw a new one.</p>
+          <div id="crop-editor" class="crop-editor">
+            <div class="crop-page"></div>
+            <div class="crop-box">
+              <span data-handle="nw"></span><span data-handle="ne"></span><span data-handle="sw"></span><span data-handle="se"></span>
+              <span data-handle="n"></span><span data-handle="s"></span><span data-handle="w"></span><span data-handle="e"></span>
+            </div>
+          </div>
+        </div>
+
+        <label id="all-pages-row" class="check" hidden><input type="checkbox" id="all-pages"> <span id="all-pages-label">Print all pages</span></label>
+
+        <details class="more">
+          <summary>Image options</summary>
+          <div class="field">
+            <span class="field-label">Style</span>
+            <div class="seg" id="ship-style" role="radiogroup" aria-label="Style">
+              <button type="button" data-value="sharp" role="radio">Sharp (text &amp; barcodes)</button>
+              <button type="button" data-value="photo" role="radio">Photo</button>
+            </div>
+          </div>
+          <label class="field">
+            <span class="field-label">Ink level <output id="threshold-out"></output></span>
+            <input type="range" id="threshold" min="60" max="230" step="5">
+            <span class="hint">Move right if lines look thin or broken, left if the label looks too heavy.</span>
+          </label>
+        </details>
+      </div>
+    </section>
+
+    <!-- ============================== Quick label ============================== -->
+    <section id="tab-quick" role="tabpanel" hidden>
+      <div class="preview-wrap"><canvas id="quick-preview" class="label-preview" aria-label="Label preview"></canvas></div>
+      <p class="label-chip"><span class="label-size-text"></span> · <button type="button" class="link goto-printer">change</button></p>
+
+      <label class="field">
+        <span class="field-label">Text</span>
+        <textarea id="q-text" rows="3" placeholder="Type your label text&#10;(new line = new line on the label)"></textarea>
+      </label>
+
+      <div class="field inline-tools">
+        <div class="seg" id="q-align" role="radiogroup" aria-label="Alignment">
+          <button type="button" data-value="left" role="radio" aria-label="Align left">Left</button>
+          <button type="button" data-value="center" role="radio" aria-label="Align center">Center</button>
+          <button type="button" data-value="right" role="radio" aria-label="Align right">Right</button>
+        </div>
+        <button id="q-bold" type="button" class="toggle" aria-pressed="true" aria-label="Bold"><b>B</b></button>
+        <select id="q-font" aria-label="Font">
+          <option value="sans">Sans</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Mono</option>
+        </select>
+      </div>
+
+      <label class="field">
+        <span class="field-label">Text size <output id="q-size-out">Auto</output></span>
+        <input type="range" id="q-size" min="0" max="400" step="4">
+      </label>
+
+      <div class="field">
+        <span class="field-label">Add a code</span>
+        <div class="seg" id="q-code" role="radiogroup" aria-label="Code">
+          <button type="button" data-value="none" role="radio">None</button>
+          <button type="button" data-value="qr" role="radio">QR code</button>
+          <button type="button" data-value="barcode" role="radio">Barcode</button>
+        </div>
+        <input id="q-code-data" type="text" autocomplete="off" autocapitalize="off" hidden>
+      </div>
+
+      <label class="check"><input type="checkbox" id="q-landscape"> Sideways (landscape)</label>
+      <label class="check"><input type="checkbox" id="q-border"> Border</label>
+      <button id="q-clear" type="button" class="btn secondary">Clear label</button>
+    </section>
+
+    <!-- ============================== Printer ============================== -->
+    <section id="tab-printer" role="tabpanel" hidden>
+      <div class="card">
+        <h2>Connection</h2>
+        <p id="conn-detail" class="muted">Not connected.</p>
+        <div class="btn-col">
+          <button id="connect-btn" type="button" class="btn">Connect printer</button>
+          <button id="disconnect-btn" type="button" class="btn secondary" hidden>Disconnect</button>
+          <button id="connect-all-btn" type="button" class="link">Printer not in the list? Show all Bluetooth devices</button>
+        </div>
+        <p class="hint">Close the RLabel app first. The printer can only talk to one app at a time.</p>
+      </div>
+
+      <div class="card">
+        <h2>Labels</h2>
+        <label class="field">
+          <span class="field-label">Label size</span>
+          <select id="label-size"></select>
+        </label>
+        <div id="custom-size" class="custom-size" hidden>
+          <label>Width <input type="number" id="custom-w" min="0.5" max="4.3" step="0.05" inputmode="decimal"> in</label>
+          <label>Height <input type="number" id="custom-h" min="0.4" max="20" step="0.05" inputmode="decimal"> in</label>
+        </div>
+        <label class="field">
+          <span class="field-label">Print darkness <output id="density-out"></output></span>
+          <input type="range" id="density" min="1" max="15" step="1">
+        </label>
+        <label class="field">
+          <span class="field-label">Print speed</span>
+          <select id="speed">
+            <option value="2">Slow (best quality)</option>
+            <option value="3">Medium</option>
+            <option value="4">Normal</option>
+            <option value="5">Fast</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="flip"> Labels come out upside down? Flip them</label>
+      </div>
+
+      <div class="card">
+        <h2>Tools</h2>
+        <div class="tool-grid">
+          <button type="button" class="btn secondary" data-tool="test">Test print</button>
+          <button type="button" class="btn secondary" data-tool="feed">Feed 1 label</button>
+          <button type="button" class="btn secondary" data-tool="calibrate">Learn label size</button>
+          <button type="button" class="btn secondary" data-tool="identify">Printer info</button>
+          <button type="button" class="btn secondary" data-tool="selfTest">Printer self-test page</button>
+        </div>
+      </div>
+
+      <details class="card">
+        <summary>Advanced</summary>
+        <label class="field">
+          <span class="field-label">Printer language</span>
+          <select id="language">
+            <option value="tspl">TSPL (Rongta default)</option>
+            <option value="zpl">ZPL (Zebra compatible)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Gap between labels (mm)</span>
+          <input type="number" id="gap" min="0" max="10" step="0.5" inputmode="decimal">
+        </label>
+        <label class="field">
+          <span class="field-label">Bluetooth packet size (bytes)</span>
+          <input type="number" id="chunk" min="20" max="512" step="1" inputmode="numeric">
+          <span class="hint">If labels print garbled or stop partway, try 100, then 20.</span>
+        </label>
+        <label class="check"><input type="checkbox" id="reliable"> Reliable sending (slower)</label>
+        <label class="check"><input type="checkbox" id="invert"> Invert image bits (TSPL; only if prints come out as a black block)</label>
+        <button id="reset-settings" type="button" class="link">Reset all settings</button>
+      </details>
+
+      <details class="card" id="diag">
+        <summary>Diagnostics log</summary>
+        <pre id="log" class="log"></pre>
+        <div class="btn-row">
+          <button id="copy-log" type="button" class="btn small secondary">Copy log</button>
+          <button id="clear-log" type="button" class="btn small secondary">Clear</button>
+        </div>
+      </details>
+
+      <details class="card">
+        <summary>Help</summary>
+        <ul class="help">
+          <li><b>iPhone:</b> Safari can't use Bluetooth printers. Open this page in the free <b>Bluefy</b> browser instead, and bookmark it there.</li>
+          <li><b>Printer not found:</b> make sure it's on (green light), close RLabel, and tap “Show all Bluetooth devices”. It may appear as “RP425…”.</li>
+          <li><b>Shipping labels:</b> Letter-size PDFs work. “Auto crop” finds the label on the page. Use “Custom” if it picks up extra text.</li>
+          <li><b>Label position drifts:</b> tap “Learn label size”, or hold the printer's feed button until it beeps.</li>
+          <li><b>Faint print:</b> raise Print darkness. <b>Upside down:</b> tick “Flip them”.</li>
+        </ul>
+      </details>
+    </section>
+  </main>
+
+  <footer id="printbar" class="printbar">
+    <div class="progress" hidden><div id="progress-fill"></div></div>
+    <div class="printbar-row">
+      <div class="stepper" aria-label="Copies">
+        <button id="copies-minus" type="button" aria-label="Fewer copies">−</button>
+        <output id="copies" aria-live="polite">1</output>
+        <button id="copies-plus" type="button" aria-label="More copies">+</button>
+      </div>
+      <button id="print-btn" type="button" class="btn print-btn">Print</button>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="vendor/JsBarcode.all.min.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
