@@ -37,13 +37,18 @@
   <main>
     <!-- ============================== Shipping label ============================== -->
     <section id="tab-ship" role="tabpanel">
-      <label id="ship-empty" class="dropzone">
-        <input type="file" class="file-input visually-hidden" accept="application/pdf,.pdf,image/*">
-        <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M12 18v-6M9 15l3-3 3 3"/></svg>
-        <strong>Choose a shipping label</strong>
-        <span>A PDF or screenshot from USPS, UPS, eBay, Etsy, Pirate Ship…</span>
-        <span class="hint">Tip: save the label to the Files app first, then pick it here.</span>
-      </label>
+      <div id="ship-empty">
+        <label class="dropzone">
+          <input type="file" class="file-input visually-hidden" accept="application/pdf,.pdf,image/*">
+          <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M12 18v-6M9 15l3-3 3 3"/></svg>
+          <strong>Choose a shipping label</strong>
+          <span>A PDF or screenshot from USPS, UPS, eBay, Etsy, Pirate Ship…</span>
+        </label>
+        <button type="button" class="btn secondary paste-btn wide">Paste a copied label</button>
+        <p class="hint center">Copied a label or screenshot (Share → Copy)? Paste it here.</p>
+      </div>
+
+      <div id="paste-box" class="paste-box" contenteditable="true" inputmode="none" role="textbox" aria-label="Paste area: press and hold, then tap Paste" hidden></div>
 
       <div id="ship-loaded" hidden>
         <div class="file-row">
@@ -55,7 +60,10 @@
               <button id="page-next" type="button" class="icon-btn" aria-label="Next page">›</button>
             </div>
           </div>
-          <label class="btn small secondary">Change file<input type="file" class="file-input visually-hidden" accept="application/pdf,.pdf,image/*"></label>
+          <div class="file-actions">
+            <button type="button" class="btn small secondary paste-btn">Paste</button>
+            <label class="btn small secondary">Change<input type="file" class="file-input visually-hidden" accept="application/pdf,.pdf,image/*"></label>
+          </div>
         </div>
 
         <div class="preview-wrap"><canvas id="ship-preview" class="label-preview" aria-label="Label preview"></canvas></div>
@@ -234,6 +242,7 @@
         <ul class="help">
           <li><b>iPhone:</b> Safari can't use Bluetooth printers. Open this page in the free <b>Bluefy</b> browser instead, and bookmark it there.</li>
           <li><b>Printer not found:</b> make sure it's on (green light), close RLabel, and tap “Show all Bluetooth devices”. It may appear as “RP425…”.</li>
+          <li><b>Copy &amp; paste:</b> copy a label (Share → Copy, or press and hold an image → Copy), then tap “Paste a copied label”. If nothing happens, press and hold the paste box that appears and tap Paste.</li>
           <li><b>Shipping labels:</b> Letter-size PDFs work. “Auto crop” finds the label on the page. Use “Custom” if it picks up extra text.</li>
           <li><b>Label position drifts:</b> tap “Learn label size”, or hold the printer's feed button until it beeps.</li>
           <li><b>Faint print:</b> raise Print darkness. <b>Upside down:</b> tick “Flip them”.</li>

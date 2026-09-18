@@ -314,6 +314,7 @@ async function loadFile(file) {
     $('#all-pages').checked = false;
     $('#file-name').textContent = file.name;
     $('#ship-empty').hidden = true;
+    $('#paste-box').hidden = true;
     $('#ship-loaded').hidden = false;
     updatePager();
     await refreshShip();
@@ -324,7 +325,78 @@ async function loadFile(file) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Pasting a copied label (image or PDF)
+// ---------------------------------------------------------------------------------------------
+
+const PASTE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/heic', 'image/webp', 'image/gif', 'image/tiff', 'image/bmp'];
+const listTypes = (types) => (types.length ? types.join(', ') : 'nothing');
+
+function pastedFile(blob, type = blob.type) {
+  const generic = !blob.name || /^image\.\w+$/i.test(blob.name);
+  if (!generic) return blob;
+  const ext = type === 'application/pdf' ? '.pdf' : type === 'image/jpeg' ? '.jpg' : type.startsWith('image/') ? `.${type.slice(6)}` : '';
+  return new File([blob], `Pasted label${ext}`, { type });
+}
+
+function nothingToPaste(types) {
+  toast(`No label picture or PDF found on the clipboard (it has: ${listTypes(types)}). Copy the label first.`, 'error', 7000);
+}
+
+// Fallback for browsers that won't hand over the clipboard to a button: a box the user presses
+// and holds to get the system Paste menu. The keyboard stays hidden (inputmode="none").
+function showPasteBox(message = 'Press and hold the box, then tap Paste.') {
+  const box = $('#paste-box');
+  box.hidden = false;
+  box.focus();
+  box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  toast(message, 'info', 8000);
+}
+
+// "Paste" button. On iPhone this shows a small "Paste" bubble that the user taps to allow it.
+async function pasteFromClipboard() {
+  if (!navigator.clipboard?.read) {
+    log('This browser has no clipboard button access; showing the paste box.');
+    return showPasteBox();
+  }
+  let items;
+  try {
+    items = await navigator.clipboard.read();
+  } catch (e) {
+    log(`Clipboard read failed: ${e.name}: ${e.message}`);
+    return showPasteBox();
+  }
+  const types = items.flatMap((item) => [...item.types]);
+  log(`Clipboard has: ${listTypes(types)}.`);
+  for (const type of PASTE_TYPES) {
+    const item = items.find((i) => i.types.includes(type));
+    if (item) return loadFile(pastedFile(await item.getType(type), type));
+  }
+  // The system Paste menu can sometimes offer files that the button can't see.
+  showPasteBox(`No label picture or PDF found (clipboard has: ${listTypes(types)}). If you copied one, press and hold the box and tap Paste.`);
+}
+
+// Paste events: the paste box on iPhone, or Ctrl/Cmd+V anywhere on the Shipping tab.
+function onPaste(e) {
+  if (state.tab !== 'ship' || !e.clipboardData) return;
+  if (e.target instanceof Element && e.target.closest('input, textarea')) return;
+  e.preventDefault();
+  const dt = e.clipboardData;
+  const types = [...dt.types];
+  log(`Pasted: ${listTypes(types)}.`);
+  const files = [...dt.files];
+  if (!files.length) for (const item of dt.items) if (item.kind === 'file' && item.getAsFile()) files.push(item.getAsFile());
+  log(`Pasted files: ${files.map((f) => `${f.name || '(no name)'} ${f.type || '(no type)'} ${f.size} bytes`).join('; ') || 'none'}.`);
+  const file = files.find((f) => PASTE_TYPES.includes(f.type) || /\.(pdf|png|jpe?g|heic|webp|gif|tiff?|bmp)$/i.test(f.name)) || files[0];
+  if (!file) return nothingToPaste(types);
+  loadFile(pastedFile(file, file.type));
+}
+
 function initShip() {
+  $$('.paste-btn').forEach((b) => b.addEventListener('click', pasteFromClipboard));
+  document.addEventListener('paste', onPaste);
+  $('#paste-box').addEventListener('input', (e) => (e.target.textContent = '')); // never keep pasted text
+
   $$('.file-input').forEach((input) =>
     input.addEventListener('change', () => {
       loadFile(input.files[0]);

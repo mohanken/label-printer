@@ -84,7 +84,9 @@ function loadImage(file) {
 
 // Open a file and return its pages.
 export async function openFile(file) {
-  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  // Pasted files can arrive without a useful name or type, so also check the first bytes.
+  const head = String.fromCharCode(...new Uint8Array(await file.slice(0, 5).arrayBuffer()));
+  const isPdf = head === '%PDF-' || file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   if (isPdf) {
     const pdfjs = await loadPdfJs();
     const data = new Uint8Array(await file.arrayBuffer());
@@ -93,10 +95,11 @@ export async function openFile(file) {
     for (let i = 1; i <= doc.numPages; i++) pages.push(new PdfPage(await doc.getPage(i)));
     return pages;
   }
-  if (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|bmp)$/i.test(file.name)) {
+  try {
     return [new ImagePage(await loadImage(file))];
+  } catch {
+    throw new Error('Please choose a PDF or an image (PNG, JPG, screenshot).');
   }
-  throw new Error('Please choose a PDF or an image (PNG, JPG, screenshot).');
 }
 
 // Render a small version of the page for the crop editor and for finding the label.

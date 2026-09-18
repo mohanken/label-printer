@@ -3,7 +3,8 @@
 A simple web app that replaces Rongta's RLabel app for the **Rongta RP425** 4-inch label printer.
 It talks to the printer directly over Bluetooth, so there's nothing to install except a browser.
 
-- **Shipping label**: pick a label PDF or screenshot (USPS, UPS, eBay, Etsy, Pirate Ship…).
+- **Shipping label**: pick a label PDF or screenshot (USPS, UPS, eBay, Etsy, Pirate Ship…),
+  or copy one (Share → Copy) and tap **Paste a copied label**.
   The app finds the label on the page, even the top half of a letter-size sheet, turns it
   upright, and fits it to your 4×6 label at the printer's native 203 dpi.
 - **Quick label**: type text, optionally add a QR code or barcode, print.
@@ -30,6 +31,7 @@ Android (Chrome) and Windows/Mac (Chrome or Edge) work without Bluefy.
 | Whole label prints black (TSPL only) | Printer → Advanced → tick **Invert image bits**. |
 | Nothing prints at all | Printer → Advanced → check the printer language is **ZPL (RP425)**, then **Test print**. |
 | Test print shows text but no QR code | Printer → Advanced → untick **Compress images**. |
+| Paste button does nothing | Press and hold the paste box that appears, then tap **Paste**. The Diagnostics log lists what the clipboard contained. |
 | Label position drifts | Printer → **Learn label size**, or hold the feed button until it beeps. |
 
 **Printer → Diagnostics log** shows what the app found and sent. Copy it if you need help.
