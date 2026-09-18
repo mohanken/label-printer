@@ -201,8 +201,8 @@
         <label class="field">
           <span class="field-label">Printer language</span>
           <select id="language">
-            <option value="tspl">TSPL (Rongta default)</option>
-            <option value="zpl">ZPL (Zebra compatible)</option>
+            <option value="zpl">ZPL (RP425)</option>
+            <option value="tspl">TSPL (older Rongta models)</option>
           </select>
         </label>
         <label class="field">
@@ -215,6 +215,7 @@
           <span class="hint">If labels print garbled or stop partway, try 100, then 20.</span>
         </label>
         <label class="check"><input type="checkbox" id="reliable"> Reliable sending (slower)</label>
+        <label class="check"><input type="checkbox" id="compress"> Compress images (ZPL; untick if text prints but pictures don't)</label>
         <label class="check"><input type="checkbox" id="invert"> Invert image bits (TSPL; only if prints come out as a black block)</label>
         <button id="reset-settings" type="button" class="link">Reset all settings</button>
       </details>

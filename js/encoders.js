@@ -157,18 +157,31 @@ export function zplCompress(bitmap) {
   return out;
 }
 
-export function zplLabel(bitmap, { density = 8, speed = 4, flip = false, copies = 1 } = {}) {
+function zplHex(bitmap) {
+  let out = '';
+  for (const v of bitmap.data) out += HEX[v >> 4] + HEX[v & 15];
+  return out;
+}
+
+// ^GFA graphic field placed at x,y. `compress` uses Zebra's ASCII compression (much smaller);
+// without it the data is plain hex, which every ZPL printer understands.
+export function zplGraphic(bitmap, x = 0, y = 0, compress = true) {
   const total = bitmap.bytesPerRow * bitmap.height;
+  const data = compress ? zplCompress(bitmap) : zplHex(bitmap);
+  return `^FO${x},${y}^GFA,${total},${total},${bitmap.bytesPerRow},${data}^FS`;
+}
+
+function zplFormat(width, height, fields, { density = 8, speed = 4, flip = false, copies = 1 } = {}) {
   return ascii(
     [
       '^XA',
-      `^PW${bitmap.width}`,
-      `^LL${bitmap.height}`,
+      `^PW${width}`,
+      `^LL${height}`,
       '^LH0,0',
       `~SD${String(Math.min(30, Math.round(density * 2))).padStart(2, '0')}`,
       `^PR${Math.round(speed)}`,
       `^PO${flip ? 'I' : 'N'}`,
-      `^FO0,0^GFA,${total},${total},${bitmap.bytesPerRow},${zplCompress(bitmap)}^FS`,
+      ...fields,
       `^PQ${Math.max(1, Math.round(copies))}`,
       '^XZ',
       '',
@@ -176,8 +189,34 @@ export function zplLabel(bitmap, { density = 8, speed = 4, flip = false, copies 
   );
 }
 
+export function zplLabel(bitmap, settings = {}) {
+  return zplFormat(bitmap.width, bitmap.height, [zplGraphic(bitmap, 0, 0, settings.compress !== false)], settings);
+}
+
 export function zplJob(bitmaps, settings, copies = 1) {
   return concatBytes(bitmaps.map((b) => zplLabel(b, { ...settings, copies })));
+}
+
+// Diagnostic label: a border and text drawn with the printer's own font (proves the printer
+// understands us), plus a small image (proves pictures print). `qr` is a packed bitmap.
+export function zplTestLabel({ width, height, lines, qr, ...settings }) {
+  const m = Math.round(Math.min(width, height) * 0.04);
+  const big = Math.max(22, Math.min(56, Math.round(Math.min(width, height) * 0.08)));
+  const small = Math.max(18, Math.round(big * 0.55));
+  // The printer's built-in font is plain ASCII; ^ and ~ would be read as commands.
+  const safe = (s) => s.replace(/×/g, 'x').replace(/[\^~]/g, ' ').replace(/[^\x20-\x7e]/g, '');
+  const fields = [`^FO${m},${m}^GB${width - 2 * m},${height - 2 * m},4^FS`];
+  let y = m * 2 + 4;
+  fields.push(`^FO${m * 2},${y}^A0N,${big},${big}^FD${safe(lines[0])}^FS`);
+  y += Math.round(big * 1.3);
+  for (const line of lines.slice(1)) {
+    fields.push(`^FO${m * 2},${y}^A0N,${small},${small}^FD${safe(line)}^FS`);
+    y += Math.round(small * 1.4);
+  }
+  if (qr && y + qr.height < height - m * 2) {
+    fields.push(zplGraphic(qr, Math.round((width - qr.width) / 2 / 8) * 8, y + m, settings.compress !== false));
+  }
+  return zplFormat(width, height, fields, settings);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -193,7 +232,7 @@ export const COMMANDS = {
     status: () => new Uint8Array([0x1b, 0x21, 0x3f]), // <ESC>!?
   },
   zpl: {
-    feed: () => ascii('^XA^XZ\r\n'),
+    feed: () => ascii('~PH\r\n'),
     calibrate: () => ascii('~JC\r\n'),
     selfTest: () => ascii('~WC\r\n'),
     identify: () => ascii('~HI\r\n'),

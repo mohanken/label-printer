@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { packRows } from '../js/raster.js';
-import { tsplJob, zplJob, zplCompress, inkBands } from '../js/encoders.js';
+import { tsplJob, zplJob, zplCompress, zplTestLabel, inkBands } from '../js/encoders.js';
 
 // A label-like test image: blank margins, text-ish blocks, a barcode, full-black rows.
 function sampleMono(width = 812, height = 1218) {
@@ -146,4 +146,21 @@ test('ZPL job wraps the graphic in a label', () => {
   assert.match(s, /^\^XA\r\n\^PW16\r\n\^LL4\r\n/);
   assert.match(s, /\^GFA,8,8,2,/);
   assert.match(s, /\^PQ3\r\n\^XZ/);
+});
+
+test('ZPL without compression sends plain hex', () => {
+  const bmp = packRows(sampleMono(16, 2));
+  const s = new TextDecoder().decode(zplJob([bmp], { ...settings, compress: false }, 1));
+  const hex = Array.from(bmp.data, (v) => v.toString(16).toUpperCase().padStart(2, '0')).join('');
+  assert.ok(s.includes(`^GFA,4,4,2,${hex}^FS`));
+});
+
+test('ZPL test label has native text, a border and the QR graphic', () => {
+  const qr = packRows(sampleMono(64, 64));
+  const s = new TextDecoder().decode(zplTestLabel({ width: 812, height: 1218, lines: ['Connection OK', 'a^b~c'], qr, ...settings }));
+  assert.match(s, /\^GB\d+,\d+,4\^FS/);
+  assert.match(s, /\^A0N,\d+,\d+\^FDConnection OK\^FS/);
+  assert.ok(s.includes('^FDa b c^FS'), 'caret and tilde are stripped from text');
+  assert.match(s, /\^GFA,512,512,8,/);
+  assert.ok(s.endsWith('^XZ\r\n'));
 });

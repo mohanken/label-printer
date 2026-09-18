@@ -1,5 +1,5 @@
 import { mmToDots, toMono, packRows, drawMono } from './raster.js';
-import { buildJob, COMMANDS } from './encoders.js';
+import { buildJob, COMMANDS, zplTestLabel } from './encoders.js';
 import { BlePrinter, MockPrinter, bluetoothAvailable } from './printer.js';
 import { openFile, previewPage, autoCrop, pageMatchesLabel, autoRotation, renderToLabel, CropEditor } from './importer.js';
 import { DEFAULT_DESIGN, renderDesign, testDesign } from './designer.js';
@@ -30,11 +30,12 @@ const DEFAULTS = {
   density: 8,
   speed: 4,
   flip: false,
-  language: 'tspl',
+  language: 'zpl', // the RP425 speaks ZPL (per its manual)
   gapMm: 3,
   chunkSize: 180,
   reliable: false,
   invert: true,
+  compress: true,
   shipStyle: 'sharp',
   threshold: 150,
 };
@@ -57,7 +58,11 @@ const store = {
   },
 };
 
-const settings = { ...DEFAULTS, ...store.get('lp.settings', {}) };
+const SETTINGS_VERSION = 2;
+const storedSettings = store.get('lp.settings', {});
+// Version 1 defaulted to TSPL, which the RP425 ignores. Move saved settings over to ZPL.
+if ((storedSettings.v || 1) < 2) delete storedSettings.language;
+const settings = { ...DEFAULTS, ...storedSettings, v: SETTINGS_VERSION };
 const saveSettings = () => store.set('lp.settings', settings);
 
 function labelMm() {
@@ -78,7 +83,7 @@ function labelSizeText() {
 
 function jobSettings() {
   const { w, h } = labelMm();
-  return { widthMm: w, heightMm: h, gapMm: settings.gapMm, density: settings.density, speed: settings.speed, flip: settings.flip, invert: settings.invert };
+  return { widthMm: w, heightMm: h, gapMm: settings.gapMm, density: settings.density, speed: settings.speed, flip: settings.flip, invert: settings.invert, compress: settings.compress };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -526,9 +531,17 @@ async function runTool(tool) {
     const cmds = COMMANDS[settings.language];
     if (tool === 'test') {
       const { w, h } = labelDots();
-      const note = `${labelSizeText().replace(' labels', '')} · ${settings.language.toUpperCase()} · darkness ${settings.density}`;
-      const bitmap = packRows(toMono(renderDesign(testDesign(note), w, h)));
-      await sendToPrinter(buildJob(settings.language, [bitmap], jobSettings(), 1));
+      const size = labelSizeText().replace(' labels', '');
+      if (settings.language === 'zpl') {
+        const qrSize = Math.round(Math.min(w, h) * 0.35);
+        const qr = packRows(toMono(renderDesign({ ...DEFAULT_DESIGN, code: 'qr', codeData: 'Hello from Label Printer' }, qrSize, qrSize)));
+        const lines = ['Connection OK', `${size} - ZPL - darkness ${settings.density}`, 'A QR code below means images print too.'];
+        await sendToPrinter(zplTestLabel({ width: w, height: h, lines, qr, ...jobSettings() }));
+      } else {
+        const note = `${size} · TSPL · darkness ${settings.density}`;
+        const bitmap = packRows(toMono(renderDesign(testDesign(note), w, h)));
+        await sendToPrinter(buildJob(settings.language, [bitmap], jobSettings(), 1));
+      }
       toast('Test label sent', 'ok');
     } else if (tool === 'feed') {
       await printer.send(cmds.feed());
@@ -634,6 +647,7 @@ function initPrinterTab() {
   bind('#chunk', 'chunkSize', { parse: (v) => Math.max(20, Math.min(512, parseInt(v, 10))), after: applyPrinterOptions });
   bind('#reliable', 'reliable', { type: 'checked', after: applyPrinterOptions });
   bind('#invert', 'invert', { type: 'checked' });
+  bind('#compress', 'compress', { type: 'checked' });
 
   $('#reset-settings').addEventListener('click', () => {
     if (!confirm('Reset all printer and label settings to their defaults?')) return;
