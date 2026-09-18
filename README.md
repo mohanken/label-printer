@@ -7,6 +7,8 @@ It talks to the printer directly over Bluetooth, so there's nothing to install e
   or copy one (Share → Copy) and tap **Paste a copied label**.
   The app finds the label on the page, even the top half of a letter-size sheet, turns it
   upright, and fits it to your 4×6 label at the printer's native 203 dpi.
+  **Adjust** opens a Photos-style editor: move and zoom the page under a label-shaped frame,
+  rotate, or switch to **Freeform** and drag the corners.
 - **Quick label**: type text, optionally add a QR code or barcode, print.
 - **Printer**: label size, darkness, speed, flip, test print, feed, calibrate, diagnostics.
 
@@ -54,7 +56,10 @@ Open `http://localhost:8425/?mock` to use a fake printer, which is handy for tes
 | `js/printer.js` | Web Bluetooth connection and chunked sending |
 | `js/encoders.js` | ZPL and TSPL command generation |
 | `js/raster.js` | Canvas → 1-bit bitmap, label detection |
-| `js/importer.js` | PDF/image loading, auto-crop, crop editor |
+| `js/importer.js` | PDF/image loading, label detection, rendering to the label |
+| `js/editor.js` | Full-screen crop editor (gestures, freeform handles, rotation) |
+| `js/cropmath.js` | Crop geometry: rotation, fitting, limits, rubber-banding |
+| `js/spring.js` | Interruptible spring animations |
 | `js/designer.js` | Quick label layout (text, QR, barcode) |
 
 The RP425 speaks **ZPL** (its manual lists "Emulation: ZPL"), so the app sends each label as a

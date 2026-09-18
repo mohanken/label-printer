@@ -66,29 +66,17 @@
           </div>
         </div>
 
-        <div class="preview-wrap"><canvas id="ship-preview" class="label-preview" aria-label="Label preview"></canvas></div>
+        <div class="preview-wrap">
+          <button id="ship-preview-btn" type="button" class="preview-btn" aria-label="Adjust how the label is cropped">
+            <canvas id="ship-preview" class="label-preview"></canvas>
+          </button>
+        </div>
+        <p id="crop-status" class="crop-status">Label found automatically</p>
+        <button id="adjust-btn" type="button" class="btn secondary wide">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/></svg>
+          Adjust
+        </button>
         <p class="label-chip"><span class="label-size-text"></span> · <button type="button" class="link goto-printer">change</button></p>
-
-        <div class="seg" id="crop-mode" role="radiogroup" aria-label="Crop">
-          <button type="button" data-value="auto" role="radio">Auto crop</button>
-          <button type="button" data-value="page" role="radio">Whole page</button>
-          <button type="button" data-value="custom" role="radio">Custom</button>
-        </div>
-        <div class="btn-row">
-          <button id="rotate-btn" type="button" class="btn secondary">↻ Rotate</button>
-          <button id="adjust-btn" type="button" class="btn secondary" aria-expanded="false">Adjust crop</button>
-        </div>
-
-        <div id="crop-panel" hidden>
-          <p class="hint">Drag the box (or its corners) around the label. Drag outside the box to draw a new one.</p>
-          <div id="crop-editor" class="crop-editor">
-            <div class="crop-page"></div>
-            <div class="crop-box">
-              <span data-handle="nw"></span><span data-handle="ne"></span><span data-handle="sw"></span><span data-handle="se"></span>
-              <span data-handle="n"></span><span data-handle="s"></span><span data-handle="w"></span><span data-handle="e"></span>
-            </div>
-          </div>
-        </div>
 
         <label id="all-pages-row" class="check" hidden><input type="checkbox" id="all-pages"> <span id="all-pages-label">Print all pages</span></label>
 
@@ -243,7 +231,7 @@
           <li><b>iPhone:</b> Safari can't use Bluetooth printers. Open this page in the free <b>Bluefy</b> browser instead, and bookmark it there.</li>
           <li><b>Printer not found:</b> make sure it's on (green light), close RLabel, and tap “Show all Bluetooth devices”. It may appear as “RP425…”.</li>
           <li><b>Copy &amp; paste:</b> copy a label (Share → Copy, or press and hold an image → Copy), then tap “Paste a copied label”. If nothing happens, press and hold the paste box that appears and tap Paste.</li>
-          <li><b>Shipping labels:</b> Letter-size PDFs work. “Auto crop” finds the label on the page. Use “Custom” if it picks up extra text.</li>
+          <li><b>Shipping labels:</b> Letter-size PDFs work; the app finds the label on the page. To change it, tap <b>Adjust</b> (or the preview): drag to move, pinch to zoom, <b>Rotate</b>, or switch to <b>Freeform</b> and drag the corners.</li>
           <li><b>Label position drifts:</b> tap “Learn label size”, or hold the printer's feed button until it beeps.</li>
           <li><b>Faint print:</b> raise Print darkness. <b>Upside down:</b> tick “Flip them”.</li>
         </ul>
@@ -264,6 +252,48 @@
   </footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- ============================== Crop editor ============================== -->
+  <div id="editor" class="editor" role="dialog" aria-modal="true" aria-labelledby="ed-title" hidden>
+    <div class="ed-backdrop"></div>
+    <header class="ed-bar">
+      <button type="button" class="ed-text ed-cancel">Cancel</button>
+      <h2 id="ed-title">Adjust label</h2>
+      <button type="button" class="ed-text ed-done">Done</button>
+    </header>
+    <div class="ed-stage" tabindex="0" aria-label="Crop area. Drag or use the arrow keys to move the page. Pinch, scroll, or press plus and minus to zoom.">
+      <div class="ed-world">
+        <div class="ed-paper"></div>
+        <div class="ed-frame">
+          <div class="ed-grid"></div>
+          <span class="ed-corner nw"></span><span class="ed-corner ne"></span><span class="ed-corner sw"></span><span class="ed-corner se"></span>
+          <span class="ed-edge n"></span><span class="ed-edge s"></span><span class="ed-edge w"></span><span class="ed-edge e"></span>
+        </div>
+      </div>
+      <p class="ed-note" hidden></p>
+      <p class="ed-hint">Drag to move · pinch to zoom</p>
+    </div>
+    <div class="ed-tools">
+      <div class="seg ed-shape" role="radiogroup" aria-label="Crop shape">
+        <button type="button" role="radio" data-value="label">Label shape</button>
+        <button type="button" role="radio" data-value="free">Freeform</button>
+      </div>
+      <div class="ed-actions">
+        <button type="button" class="ed-action" data-act="rotate">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+          Rotate
+        </button>
+        <button type="button" class="ed-action" data-act="auto" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M9 9h6v6H9z"/></svg>
+          Fit label
+        </button>
+        <button type="button" class="ed-action" data-act="page" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5"/></svg>
+          Whole page
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script src="vendor/JsBarcode.all.min.js"></script>
   <script src="vendor/qrcode.min.js"></script>

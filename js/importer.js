@@ -22,7 +22,8 @@ function loadPdfJs() {
   return pdfjsReady;
 }
 
-const PREVIEW_LONG_SIDE = 900; // px used for the crop editor and ink detection
+const PREVIEW_LONG_SIDE = 900; // px used for label detection and the editor's first frame
+const DETAIL_LONG_SIDE = 2400; // px for zooming in the crop editor
 
 // A source is one page of a PDF or a single image, with a common interface:
 //   width/height  — natural size in "units" (PDF points or image pixels)
@@ -49,6 +50,11 @@ class PdfPage {
     }).promise;
     return canvas;
   }
+
+  // Whole page, sharp enough to zoom into in the crop editor.
+  detailCanvas() {
+    return this.render(DETAIL_LONG_SIDE / Math.max(this.width, this.height));
+  }
 }
 
 class ImagePage {
@@ -64,8 +70,13 @@ class ImagePage {
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(this.img, region.x * this.width, region.y * this.height, region.w * this.width, region.h * this.height, 0, 0, w, h);
+    ctx.drawImage(this.img, -region.x * this.width * scale, -region.y * this.height * scale, this.width * scale, this.height * scale);
     return canvas;
+  }
+
+  // Whole page, sharp enough to zoom into in the crop editor.
+  detailCanvas() {
+    return this.render(Math.min(1, DETAIL_LONG_SIDE / Math.max(this.width, this.height)));
   }
 }
 
@@ -150,98 +161,4 @@ export async function renderToLabel(page, { crop, rotation = 0, labelW, labelH, 
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(rotated, Math.round((labelW - rotated.width) / 2), Math.round((labelH - rotated.height) / 2));
   return out;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Crop editor: a draggable rectangle over the page preview.
-// ---------------------------------------------------------------------------------------------
-
-export class CropEditor {
-  constructor(container, onChange) {
-    this.container = container;
-    this.onChange = onChange;
-    this.crop = { x: 0, y: 0, w: 1, h: 1 };
-    this.box = container.querySelector('.crop-box');
-    this.canvasHost = container.querySelector('.crop-page');
-    this.drag = null;
-
-    container.addEventListener('pointerdown', (e) => this.start(e));
-    container.addEventListener('pointermove', (e) => this.move(e));
-    container.addEventListener('pointerup', (e) => this.end(e));
-    container.addEventListener('pointercancel', (e) => this.end(e));
-  }
-
-  setPage(previewCanvas) {
-    this.canvasHost.replaceChildren(previewCanvas);
-    this.container.style.aspectRatio = `${previewCanvas.width} / ${previewCanvas.height}`;
-  }
-
-  setCrop(crop) {
-    this.crop = { ...crop };
-    this.draw();
-  }
-
-  draw() {
-    const { x, y, w, h } = this.crop;
-    Object.assign(this.box.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
-  }
-
-  point(e) {
-    const r = this.container.getBoundingClientRect();
-    return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
-  }
-
-  start(e) {
-    const handle = e.target.closest('[data-handle]')?.dataset.handle;
-    const p = this.point(e);
-    const inside = p.x >= this.crop.x && p.x <= this.crop.x + this.crop.w && p.y >= this.crop.y && p.y <= this.crop.y + this.crop.h;
-    const mode = handle || (inside ? 'move' : 'new');
-    this.drag = { mode, start: p, orig: { ...this.crop } };
-    this.container.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  }
-
-  move(e) {
-    if (!this.drag) return;
-    const p = this.point(e);
-    const { mode, start, orig } = this.drag;
-    const dx = p.x - start.x;
-    const dy = p.y - start.y;
-    const MIN = 0.04;
-    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    let { x, y, w, h } = orig;
-
-    if (mode === 'move') {
-      x = clamp(orig.x + dx, 0, 1 - w);
-      y = clamp(orig.y + dy, 0, 1 - h);
-    } else if (mode === 'new') {
-      if (Math.abs(dx) < 0.02 && Math.abs(dy) < 0.02) return; // ignore taps and jitter
-      const cx = clamp(p.x, 0, 1);
-      const cy = clamp(p.y, 0, 1);
-      x = Math.min(start.x, cx);
-      y = Math.min(start.y, cy);
-      w = Math.max(MIN, Math.abs(cx - start.x));
-      h = Math.max(MIN, Math.abs(cy - start.y));
-    } else {
-      let left = orig.x, top = orig.y, right = orig.x + orig.w, bottom = orig.y + orig.h;
-      if (mode.includes('w')) left = clamp(orig.x + dx, 0, right - MIN);
-      if (mode.includes('e')) right = clamp(right + dx, left + MIN, 1);
-      if (mode.includes('n')) top = clamp(orig.y + dy, 0, bottom - MIN);
-      if (mode.includes('s')) bottom = clamp(bottom + dy, top + MIN, 1);
-      x = left;
-      y = top;
-      w = right - left;
-      h = bottom - top;
-    }
-    this.crop = { x, y, w: Math.min(w, 1 - x), h: Math.min(h, 1 - y) };
-    this.draw();
-  }
-
-  end() {
-    if (!this.drag) return;
-    const { orig } = this.drag;
-    this.drag = null;
-    const c = this.crop;
-    if (c.x !== orig.x || c.y !== orig.y || c.w !== orig.w || c.h !== orig.h) this.onChange({ ...c });
-  }
 }

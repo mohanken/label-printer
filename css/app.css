@@ -598,56 +598,31 @@ input[type='range'] {
   text-align: center;
 }
 
-.crop-editor {
-  position: relative;
-  width: 100%;
-  margin: 8px 0 16px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: var(--paper-shadow);
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.crop-page canvas {
+.preview-btn {
   display: block;
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.1s ease-out;
 }
 
-.crop-box {
-  position: absolute;
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.35);
-  cursor: move;
+.preview-btn:active {
+  transform: scale(0.98);
 }
 
-.crop-box [data-handle] {
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  margin: -14px 0 0 -14px;
+.crop-status {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
 }
 
-.crop-box [data-handle]::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 2px solid var(--accent);
-  border-radius: 50%;
-  background: #fff;
+.btn.wide svg {
+  flex: none;
 }
-
-.crop-box [data-handle='nw'] { left: 0; top: 0; cursor: nwse-resize; }
-.crop-box [data-handle='ne'] { left: 100%; top: 0; cursor: nesw-resize; }
-.crop-box [data-handle='sw'] { left: 0; top: 100%; cursor: nesw-resize; }
-.crop-box [data-handle='se'] { left: 100%; top: 100%; cursor: nwse-resize; }
-.crop-box [data-handle='n'] { left: 50%; top: 0; cursor: ns-resize; }
-.crop-box [data-handle='s'] { left: 50%; top: 100%; cursor: ns-resize; }
-.crop-box [data-handle='w'] { left: 0; top: 50%; cursor: ew-resize; }
-.crop-box [data-handle='e'] { left: 100%; top: 50%; cursor: ew-resize; }
 
 .more {
   margin-top: 8px;
@@ -799,5 +774,319 @@ input[type='range'] {
   }
   .btn:active:not(:disabled) {
     transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------- crop editor */
+/* Always dark, like the Photos app's editor, so the page is the brightest thing on screen. */
+
+html.editor-open,
+html.editor-open body {
+  overflow: hidden;
+}
+
+.editor {
+  --ed-text: #f2f2f7;
+  --ed-muted: #98989f;
+  --ed-accent: #0a84ff;
+  --ed-control: #1c1c1e;
+  --ed-control-on: #48484a;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  color: var(--ed-text);
+  color-scheme: dark;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.ed-backdrop {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.ed-bar,
+.ed-tools,
+.ed-note,
+.ed-hint {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.editor.is-open .ed-backdrop,
+.editor.is-open .ed-bar,
+.editor.is-open .ed-tools,
+.editor.is-open .ed-note,
+.editor.is-open .ed-hint {
+  opacity: 1;
+}
+
+.ed-bar {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 2px 8px;
+}
+
+.ed-bar h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ed-text {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--ed-text);
+  font-size: 17px;
+}
+
+.ed-done {
+  justify-self: end;
+  color: var(--ed-accent);
+  font-weight: 600;
+}
+
+.ed-stage {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  outline: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.ed-stage:active {
+  cursor: grabbing;
+}
+
+.ed-stage:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ed-accent);
+}
+
+.ed-world {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.ed-paper,
+.ed-page,
+.ed-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.ed-paper {
+  background: #fff;
+}
+
+.ed-page {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.ed-frame {
+  border-radius: 6px; /* label stock has rounded corners */
+  box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.95), 0 0 0 200vmax rgb(0 0 0 / 0.62);
+  pointer-events: none;
+}
+
+.editor.is-free .ed-frame {
+  border-radius: 0;
+}
+
+.ed-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.ed-grid::before,
+.ed-grid::after {
+  content: '';
+  position: absolute;
+  border: 0 solid rgb(255 255 255 / 0.5);
+}
+
+.ed-grid::before {
+  top: 0;
+  bottom: 0;
+  left: 33.333%;
+  right: 33.333%;
+  border-left-width: 1px;
+  border-right-width: 1px;
+}
+
+.ed-grid::after {
+  left: 0;
+  right: 0;
+  top: 33.333%;
+  bottom: 33.333%;
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+}
+
+.ed-frame.active .ed-grid {
+  opacity: 1;
+}
+
+/* Freeform handles: Photos-style corner brackets and edge bars. */
+.ed-corner,
+.ed-edge {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.editor.is-free .ed-corner,
+.editor.is-free .ed-edge {
+  opacity: 1;
+}
+
+.ed-corner {
+  width: 22px;
+  height: 22px;
+  border: 0 solid #fff;
+}
+
+.ed-corner.nw { top: -4px; left: -4px; border-top-width: 4px; border-left-width: 4px; }
+.ed-corner.ne { top: -4px; right: -4px; border-top-width: 4px; border-right-width: 4px; }
+.ed-corner.sw { bottom: -4px; left: -4px; border-bottom-width: 4px; border-left-width: 4px; }
+.ed-corner.se { bottom: -4px; right: -4px; border-bottom-width: 4px; border-right-width: 4px; }
+
+.ed-edge {
+  background: #fff;
+}
+
+.ed-edge.n,
+.ed-edge.s {
+  left: 50%;
+  width: 24px;
+  height: 4px;
+  margin-left: -12px;
+}
+
+.ed-edge.n { top: -4px; }
+.ed-edge.s { bottom: -4px; }
+
+.ed-edge.w,
+.ed-edge.e {
+  top: 50%;
+  width: 4px;
+  height: 24px;
+  margin-top: -12px;
+}
+
+.ed-edge.w { left: -4px; }
+.ed-edge.e { right: -4px; }
+
+.ed-note {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  color: var(--ed-muted);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ed-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  margin: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgb(44 44 46 / 0.9);
+  color: #e5e5ea;
+  font-size: 13px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.editor.is-open .ed-hint.gone {
+  opacity: 0;
+}
+
+.ed-tools {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 8px 16px 12px;
+}
+
+.ed-shape {
+  justify-self: center;
+  width: min(100%, 320px);
+  background: var(--ed-control);
+}
+
+.ed-shape button {
+  color: var(--ed-text);
+}
+
+.ed-shape button.on {
+  background: var(--ed-control-on);
+  box-shadow: none;
+}
+
+.ed-actions {
+  display: flex;
+  justify-content: space-around;
+}
+
+.ed-action {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 84px;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ed-text);
+  font-size: 12px;
+  transition: background-color 0.1s ease-out;
+}
+
+.ed-action svg {
+  width: 26px;
+  height: 26px;
+}
+
+.ed-action:active {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.ed-action[aria-pressed='true'] {
+  color: var(--ed-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-backdrop,
+  .ed-bar,
+  .ed-tools,
+  .ed-note,
+  .ed-hint {
+    transition-duration: 0.15s;
   }
 }

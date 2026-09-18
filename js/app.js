@@ -1,7 +1,9 @@
 import { mmToDots, toMono, packRows, drawMono } from './raster.js';
 import { buildJob, COMMANDS, zplTestLabel } from './encoders.js';
 import { BlePrinter, MockPrinter, bluetoothAvailable } from './printer.js';
-import { openFile, previewPage, autoCrop, pageMatchesLabel, autoRotation, renderToLabel, CropEditor } from './importer.js';
+import { openFile, previewPage, autoCrop, pageMatchesLabel, autoRotation, renderToLabel } from './importer.js';
+import { CropEditor } from './editor.js';
+import { rotatedSize, toRotated, fromRotated, labelCropAround } from './cropmath.js';
 import { DEFAULT_DESIGN, renderDesign, testDesign } from './designer.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -224,69 +226,122 @@ function refreshLabelSizeText() {
 // Shipping label tab
 // ---------------------------------------------------------------------------------------------
 
-const ship = { file: null, pages: [], previews: [], index: 0, mode: 'auto', custom: null, rotation: null, lastRotation: 0, allPages: false, token: 0, shownPreview: null };
+// How the label is framed:
+//   source 'auto'   — each page's detected label, turned to fit (default)
+//   source 'page'   — each whole page, turned to fit
+//   ship.view       — set once the user adjusts: { rotation, crop (fractions of the turned
+//                     page), freeform }, applied to every page
+const ship = { file: null, pages: [], previews: [], details: [], index: 0, source: 'auto', view: null, allPages: false, token: 0 };
 
-const cropEditor = new CropEditor($('#crop-editor'), (crop) => {
-  ship.custom = crop;
-  ship.mode = 'custom';
-  setCropMode('custom');
-  refreshShip();
-});
-
-const setCropMode = segmented($('#crop-mode'), ship.mode, (mode) => {
-  ship.mode = mode;
-  if (mode === 'custom') {
-    toggleCropPanel(true);
-    if (!ship.custom) ship.custom = { ...cropEditor.crop };
-  }
-  refreshShip();
-});
-
-function toggleCropPanel(open = $('#crop-panel').hidden) {
-  $('#crop-panel').hidden = !open;
-  $('#adjust-btn').setAttribute('aria-expanded', String(open));
-  $('#adjust-btn').textContent = open ? 'Hide crop' : 'Adjust crop';
-}
+const editor = new CropEditor($('#editor'));
+const FULL = { x: 0, y: 0, w: 1, h: 1 };
 
 async function pagePreview(i) {
   if (!ship.previews[i]) ship.previews[i] = await previewPage(ship.pages[i]);
   return ship.previews[i];
 }
 
-async function cropFor(i) {
-  if (ship.mode === 'page') return { x: 0, y: 0, w: 1, h: 1 };
-  if (ship.mode === 'custom' && ship.custom) return ship.custom;
+// The label detected on page i (in page units) and the rotation that fits it best.
+async function detectLabel(i) {
+  const page = ship.pages[i];
   const { w, h } = labelDots();
-  return autoCrop(await pagePreview(i), w / h);
+  const crop = autoCrop(await pagePreview(i), w / h);
+  const box = { x: crop.x * page.width, y: crop.y * page.height, w: crop.w * page.width, h: crop.h * page.height };
+  return { box, rotation: autoRotation(page, crop, w, h) };
+}
+
+// Rotation and crop (in the turned page's units) for page i.
+async function viewFor(i) {
+  const page = ship.pages[i];
+  const { w, h } = labelDots();
+  if (ship.view) {
+    const { rotation, crop, freeform } = ship.view;
+    const pr = rotatedSize(page.width, page.height, rotation);
+    return { rotation, freeform, crop: { x: crop.x * pr.w, y: crop.y * pr.h, w: crop.w * pr.w, h: crop.h * pr.h } };
+  }
+  if (ship.source === 'page') {
+    const rotation = autoRotation(page, FULL, w, h);
+    const pr = rotatedSize(page.width, page.height, rotation);
+    return { rotation, freeform: false, crop: labelCropAround({ x: 0, y: 0, ...pr }, w, h, 0) };
+  }
+  const { box, rotation } = await detectLabel(i);
+  return { rotation, freeform: false, crop: labelCropAround(toRotated(box, page.width, page.height, rotation), w, h, mmToDots(2)) };
 }
 
 async function shipLabelCanvas(i) {
   const page = ship.pages[i];
-  const crop = await cropFor(i);
   const { w, h } = labelDots();
-  const rotation = ship.rotation ?? autoRotation(page, crop, w, h);
-  const margin = ship.mode === 'auto' ? mmToDots(2) : 0;
-  const canvas = await renderToLabel(page, { crop, rotation, labelW: w, labelH: h, margin });
-  return { canvas, crop, rotation };
+  const view = await viewFor(i);
+  const q = fromRotated(view.crop, page.width, page.height, view.rotation);
+  const crop = { x: q.x / page.width, y: q.y / page.height, w: q.w / page.width, h: q.h / page.height };
+  return renderToLabel(page, { crop, rotation: view.rotation, labelW: w, labelH: h, margin: 0 });
 }
 
 const shipMono = (canvas) => toMono(canvas, { mode: settings.shipStyle, threshold: settings.threshold });
 
+function cropStatusText() {
+  if (ship.view?.freeform) return 'Cropped by you (freeform)';
+  if (ship.view) return ship.source === 'page' ? 'Whole page' : 'Cropped by you';
+  return ship.source === 'page' ? 'Whole page' : 'Label found automatically';
+}
+
 async function refreshShip() {
   if (!ship.pages.length) return;
   const token = ++ship.token;
-  const i = ship.index;
   try {
-    const preview = await pagePreview(i);
-    const { canvas, crop, rotation } = await shipLabelCanvas(i);
+    const canvas = await shipLabelCanvas(ship.index);
     if (token !== ship.token) return; // a newer refresh started
-    ship.lastRotation = rotation;
     drawMono(shipMono(canvas), $('#ship-preview'));
-    if (ship.shownPreview !== preview) {
-      cropEditor.setPage(preview);
-      ship.shownPreview = preview;
+    $('#crop-status').textContent = cropStatusText();
+  } catch (e) {
+    reportError(e);
+  }
+}
+
+// Forget any manual crop (e.g. after the label size changes) and go back to the default.
+function resetCrop() {
+  ship.view = null;
+  const { w, h } = labelMm();
+  ship.source = ship.pages[0] && pageMatchesLabel(ship.pages[0], w, h) ? 'page' : 'auto';
+}
+
+async function openEditor() {
+  if (!ship.pages.length || editor.isOpen) return;
+  const i = ship.index;
+  const page = ship.pages[i];
+  const { w, h } = labelDots();
+  try {
+    const [view, found, preview] = await Promise.all([viewFor(i), detectLabel(i), pagePreview(i)]);
+    ship.details[i] ??= page.detailCanvas();
+    const result = await editor.open({
+      page,
+      canvas: preview,
+      hiRes: ship.details[i],
+      view,
+      source: ship.view ? (ship.source === 'page' ? 'page' : 'custom') : ship.source,
+      autoBox: found.box,
+      autoRotation: found.rotation,
+      labelW: w,
+      labelH: h,
+      labelName: `${labelSizeText().replace(' labels', '')} label`,
+      margin: mmToDots(2),
+      pageCount: ship.pages.length,
+      from: $('#ship-preview').getBoundingClientRect(),
+    });
+    if (!result) return; // cancelled
+    const untouched =
+      !result.freeform &&
+      ((result.source === 'auto' && result.rotation === found.rotation) ||
+        (result.source === 'page' && result.rotation === autoRotation(page, FULL, w, h)));
+    if (untouched) {
+      ship.view = null;
+      ship.source = result.source;
+    } else {
+      ship.view = { rotation: result.rotation, crop: result.crop, freeform: result.freeform };
+      ship.source = result.source === 'page' ? 'page' : 'custom';
     }
-    cropEditor.setCrop(crop);
+    log(`Crop: ${cropStatusText()}, rotation ${result.rotation}°.`);
+    await refreshShip();
   } catch (e) {
     reportError(e);
   }
@@ -307,10 +362,8 @@ async function loadFile(file) {
   toast(`Opening ${file.name}…`, 'info', 10000);
   try {
     const pages = await openFile(file);
-    Object.assign(ship, { file, pages, previews: new Array(pages.length), index: 0, rotation: null, custom: null, allPages: false, shownPreview: null });
-    const { w, h } = labelMm();
-    ship.mode = pageMatchesLabel(pages[0], w, h) ? 'page' : 'auto';
-    setCropMode(ship.mode);
+    Object.assign(ship, { file, pages, previews: new Array(pages.length), details: [], index: 0, allPages: false });
+    resetCrop();
     $('#all-pages').checked = false;
     $('#file-name').textContent = file.name;
     $('#ship-empty').hidden = true;
@@ -427,11 +480,8 @@ function initShip() {
     updatePager();
     refreshShip();
   });
-  $('#rotate-btn').addEventListener('click', () => {
-    ship.rotation = ((ship.rotation ?? ship.lastRotation) + 90) % 360;
-    refreshShip();
-  });
-  $('#adjust-btn').addEventListener('click', () => toggleCropPanel());
+  $('#adjust-btn').addEventListener('click', openEditor);
+  $('#ship-preview-btn').addEventListener('click', openEditor);
   $('#all-pages').addEventListener('change', (e) => (ship.allPages = e.target.checked));
 
   segmented($('#ship-style'), settings.shipStyle, (v) => {
@@ -650,9 +700,11 @@ function initPrintBar() {
 // Printer tab
 // ---------------------------------------------------------------------------------------------
 
+// The label size changed: a manual crop was shaped for the old label, so start over.
 function refreshAllPreviews() {
   refreshLabelSizeText();
   if (state.tab === 'quick') renderQuick();
+  resetCrop();
   refreshShip();
 }
 
@@ -778,7 +830,7 @@ function init() {
   showTab(store.get('lp.tab', 'ship'));
   log(`Ready${mock ? ' (mock printer)' : ''}. ${labelSizeText()}, ${settings.language.toUpperCase()}.`);
 
-  if (mock) window.__app = { printer, ship, design, settings, collectBitmaps, loadFile, showTab };
+  if (mock) window.__app = { printer, ship, design, settings, collectBitmaps, loadFile, showTab, editor };
 }
 
 init();
