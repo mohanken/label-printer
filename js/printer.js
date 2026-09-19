@@ -57,7 +57,7 @@ export class BlePrinter extends EventTarget {
     this.connecting = null; // in-flight (re)connection, shared by everyone who needs it
     this.userDisconnected = false;
     this.queue = Promise.resolve();
-    this.options = { chunkSize: 180, pauseEvery: 16, pauseMs: 20, reliable: false };
+    this.options = { chunkSize: 180, reliable: true, maxKBps: 8 };
     this.rxText = '';
     this.retryMs = 1000; // first retry delay; doubles up to 15 s
     // Coming back to the page: pick the connection back up.
@@ -298,23 +298,29 @@ export class BlePrinter extends EventTarget {
 
   async sendNow(bytes, onProgress) {
     await this.ensureConnected();
-    const { chunkSize, pauseEvery, pauseMs, reliable } = this.options;
+    const { chunkSize, reliable, maxKBps } = this.options;
     const c = this.writeChar;
-    const noResponse = !reliable && c.properties.writeWithoutResponse && typeof c.writeValueWithoutResponse === 'function';
+    const canConfirm = c.properties.write;
+    const canStream = c.properties.writeWithoutResponse && typeof c.writeValueWithoutResponse === 'function';
+    // Confirmed writes wait for the printer's Bluetooth chip to acknowledge each packet.
+    const confirmed = canConfirm && (reliable || !canStream);
     const size = Math.max(20, Math.min(512, chunkSize | 0));
+    // The chip passes data on to the printer at serial-port speed and silently drops whatever
+    // overflows its small buffer, so big labels are paced. Small jobs fit in the buffer anyway.
+    const bytesPerMs = maxKBps > 0 ? (maxKBps * 1024) / 1000 : Infinity;
     const started = performance.now();
-    let n = 0;
     for (let off = 0; off < bytes.length; off += size) {
       const chunk = bytes.slice(off, off + size);
-      if (noResponse) await c.writeValueWithoutResponse(chunk);
-      else if (typeof c.writeValueWithResponse === 'function' && c.properties.write) await c.writeValueWithResponse(chunk);
+      if (!confirmed) await c.writeValueWithoutResponse(chunk);
+      else if (typeof c.writeValueWithResponse === 'function') await c.writeValueWithResponse(chunk);
       else await c.writeValue(chunk);
-      n++;
-      if (pauseEvery > 0 && n % pauseEvery === 0 && pauseMs > 0) await sleep(pauseMs);
+      const ahead = (off + chunk.length) / bytesPerMs - (performance.now() - started);
+      if (ahead > 4) await sleep(ahead);
       onProgress?.(Math.min(bytes.length, off + size), bytes.length);
     }
-    const secs = (performance.now() - started) / 1000;
-    this.log(`Sent ${(bytes.length / 1024).toFixed(1)} KB in ${secs.toFixed(1)} s${noResponse ? '' : ' (reliable mode)'}.`);
+    const secs = Math.max(0.001, (performance.now() - started) / 1000);
+    const kb = bytes.length / 1024;
+    this.log(`Sent ${kb.toFixed(1)} KB in ${secs.toFixed(1)} s (${(kb / secs).toFixed(1)} KB/s, ${confirmed ? 'confirmed' : 'unconfirmed'} packets of ${size} bytes).`);
   }
 
   // Send a query and collect whatever text comes back within `waitMs`.

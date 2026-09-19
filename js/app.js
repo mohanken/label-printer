@@ -35,7 +35,8 @@ const DEFAULTS = {
   language: 'zpl', // the RP425 speaks ZPL (per its manual)
   gapMm: 3,
   chunkSize: 180,
-  reliable: false,
+  reliable: true,
+  maxKBps: 8,
   invert: true,
   compress: true,
   shipStyle: 'sharp',
@@ -60,10 +61,12 @@ const store = {
   },
 };
 
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 const storedSettings = store.get('lp.settings', {});
 // Version 1 defaulted to TSPL, which the RP425 ignores. Move saved settings over to ZPL.
 if ((storedSettings.v || 1) < 2) delete storedSettings.language;
+// Version 2 sent data unpaced and unconfirmed, which drops parts of big labels.
+if ((storedSettings.v || 1) < 3) delete storedSettings.reliable;
 const settings = { ...DEFAULTS, ...storedSettings, v: SETTINGS_VERSION };
 const saveSettings = () => store.set('lp.settings', settings);
 
@@ -137,7 +140,7 @@ const mock = new URLSearchParams(location.search).has('mock');
 const printer = mock ? new MockPrinter(log) : new BlePrinter(log);
 
 function applyPrinterOptions() {
-  printer.options = { ...printer.options, chunkSize: settings.chunkSize, reliable: settings.reliable };
+  printer.options = { ...printer.options, chunkSize: settings.chunkSize, reliable: settings.reliable, maxKBps: settings.maxKBps };
 }
 applyPrinterOptions();
 
@@ -763,6 +766,7 @@ function initPrinterTab() {
 
   const bind = (id, key, { type = 'value', parse = (v) => v, after } = {}) => {
     const el = $(id);
+    if (!el) return; // a cached older page may lack newer controls; don't let that stop the app
     if (type === 'checked') el.checked = settings[key];
     else el.value = settings[key];
     el.addEventListener('change', () => {
@@ -779,6 +783,7 @@ function initPrinterTab() {
   bind('#gap', 'gapMm', { parse: parseFloat });
   bind('#chunk', 'chunkSize', { parse: (v) => Math.max(20, Math.min(512, parseInt(v, 10))), after: applyPrinterOptions });
   bind('#reliable', 'reliable', { type: 'checked', after: applyPrinterOptions });
+  bind('#max-kbps', 'maxKBps', { parse: (v) => Math.max(0, Math.min(100, parseFloat(v))), after: applyPrinterOptions });
   bind('#invert', 'invert', { type: 'checked' });
   bind('#compress', 'compress', { type: 'checked' });
 

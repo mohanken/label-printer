@@ -91,6 +91,12 @@ export async function run() {
   if (!window.__app?.printer?.sent) throw new Error('Open the app with ?mock first.');
   const { printer, showTab } = window.__app;
   if (!printer.connected) await printer.connect();
+  // The checker decodes ZPL (what the RP425 speaks); don't let leftover settings change that.
+  const language = $('#language');
+  if (language.value !== 'zpl') {
+    language.value = 'zpl';
+    language.dispatchEvent(new Event('change'));
+  }
   const results = [];
   const check = async (name, preview, expectLabels = 1) => {
     const { job, error } = await press($('#print-btn'));

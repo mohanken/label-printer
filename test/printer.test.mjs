@@ -18,8 +18,15 @@ function fakeDevice({ id = 'dev-1', name = 'RP425-BLE', failures = 0, never = fa
   const written = [];
   const characteristic = {
     uuid: '00002af1-0000-1000-8000-00805f9b34fb',
-    properties: { writeWithoutResponse: true },
-    writeValueWithoutResponse: async (chunk) => written.push(...chunk),
+    properties: { writeWithoutResponse: true, write: true },
+    writeValueWithoutResponse: async (chunk) => {
+      device.modes.add('unconfirmed');
+      written.push(...chunk);
+    },
+    writeValueWithResponse: async (chunk) => {
+      device.modes.add('confirmed');
+      written.push(...chunk);
+    },
   };
   const service = { uuid: WRITE_UUID, getCharacteristics: async () => [characteristic] };
   characteristic.service = service;
@@ -27,6 +34,7 @@ function fakeDevice({ id = 'dev-1', name = 'RP425-BLE', failures = 0, never = fa
   device.id = id;
   device.name = name;
   device.written = written;
+  device.modes = new Set();
   device.gatt = {
     connected: false,
     async connect() {
@@ -140,4 +148,33 @@ test('sending after a reconnect writes the bytes to the printer', async () => {
   await p.restore({ id: 'dev-1' });
   await p.send(new Uint8Array([1, 2, 3, 4]));
   assert.deepEqual(device.written, [1, 2, 3, 4]);
+});
+
+test('big jobs are sent as confirmed packets, paced to the speed limit', async () => {
+  const device = fakeDevice();
+  bluetooth.getDevices = async () => [device];
+  const p = newPrinter();
+  p.options = { ...p.options, maxKBps: 40 }; // 40 KB/s → 8 KB takes about 200 ms
+  await p.restore({ id: 'dev-1' });
+  const bytes = new Uint8Array(8 * 1024).map((_, i) => i & 255);
+  const t0 = performance.now();
+  await p.send(bytes);
+  const ms = performance.now() - t0;
+  assert.deepEqual([...device.modes], ['confirmed']);
+  assert.equal(device.written.length, bytes.length);
+  assert.deepEqual(device.written.slice(0, 5), [0, 1, 2, 3, 4], 'bytes arrive in order');
+  assert.ok(ms >= 170, `took ${ms.toFixed(0)} ms, should be paced to ~200 ms`);
+  assert.match(p.lines.at(-1), /confirmed packets of 180 bytes/);
+});
+
+test('with the limit off and confirmation unticked, data streams unconfirmed', async () => {
+  const device = fakeDevice();
+  bluetooth.getDevices = async () => [device];
+  const p = newPrinter();
+  p.options = { ...p.options, reliable: false, maxKBps: 0 };
+  await p.restore({ id: 'dev-1' });
+  const t0 = performance.now();
+  await p.send(new Uint8Array(8 * 1024));
+  assert.deepEqual([...device.modes], ['unconfirmed']);
+  assert.ok(performance.now() - t0 < 150, 'no pacing when the limit is 0');
 });

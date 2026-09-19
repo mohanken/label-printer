@@ -210,7 +210,12 @@
           <input type="number" id="chunk" min="20" max="512" step="1" inputmode="numeric">
           <span class="hint">If labels print garbled or stop partway, try 100, then 20.</span>
         </label>
-        <label class="check"><input type="checkbox" id="reliable"> Reliable sending (slower)</label>
+        <label class="check"><input type="checkbox" id="reliable"> Wait for the printer to confirm each packet (recommended)</label>
+        <label class="field">
+          <span class="field-label">Sending speed limit (KB/s)</span>
+          <input type="number" id="max-kbps" min="0" max="100" step="1" inputmode="decimal">
+          <span class="hint">If small labels print but big ones don't, lower this (try 4). 0 = no limit.</span>
+        </label>
         <label class="check"><input type="checkbox" id="compress"> Compress images (ZPL; untick if text prints but pictures don't)</label>
         <label class="check"><input type="checkbox" id="invert"> Invert image bits (TSPL; only if prints come out as a black block)</label>
         <button id="reset-settings" type="button" class="link">Reset all settings</button>
@@ -232,6 +237,7 @@
           <li><b>Printer not found:</b> make sure it's on (green light), close RLabel, and tap “Show all Bluetooth devices”. It may appear as “RP425…”.</li>
           <li><b>Copy &amp; paste:</b> copy a label (Share → Copy, or press and hold an image → Copy), then tap “Paste a copied label”. If nothing happens, press and hold the paste box that appears and tap Paste.</li>
           <li><b>Shipping labels:</b> Letter-size PDFs work; the app finds the label on the page. To change it, tap <b>Adjust</b> (or the preview): drag to move, pinch to zoom, <b>Rotate</b>, or switch to <b>Freeform</b> and drag the corners.</li>
+          <li><b>Says “Sent” but nothing prints:</b> switch the printer off and on (a half-received label can leave it waiting), then print again. If big labels still don't print, lower the sending speed limit under Advanced.</li>
           <li><b>Label position drifts:</b> tap “Learn label size”, or hold the printer's feed button until it beeps.</li>
           <li><b>Faint print:</b> raise Print darkness. <b>Upside down:</b> tick “Flip them”.</li>
         </ul>
