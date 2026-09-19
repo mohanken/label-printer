@@ -625,7 +625,7 @@ async function collectBitmaps() {
   if (state.tab === 'quick') return [packRows(toMono(renderDesign(design, w, h)))];
   const indexes = ship.allPages ? ship.pages.map((_, i) => i) : [ship.index];
   const out = [];
-  for (const i of indexes) out.push(packRows(shipMono((await shipLabelCanvas(i)).canvas)));
+  for (const i of indexes) out.push(packRows(shipMono(await shipLabelCanvas(i))));
   return out;
 }
 

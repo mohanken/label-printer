@@ -50,6 +50,13 @@ npm test           # encoder round-trip tests (Node 20+)
 
 Open `http://localhost:8425/?mock` to use a fake printer, which is handy for testing without hardware.
 
+Before publishing, run the end-to-end print check on that page. It prints every path to the mock
+printer, decodes the result, and compares it dot for dot with the preview. In the console:
+
+```js
+(await import('/test/print-check.js')).run()
+```
+
 | File | What it does |
 | --- | --- |
 | `js/app.js` | UI wiring, settings, print flow |
