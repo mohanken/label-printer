@@ -52,19 +52,39 @@ export class BlePrinter extends EventTarget {
     this.device = null;
     this.writeChar = null;
     this.notifyChar = null;
+    this.listening = new WeakSet();
+    this.discovered = null; // the device whose services we've already listed in the log
+    this.connecting = null; // in-flight (re)connection, shared by everyone who needs it
+    this.userDisconnected = false;
     this.queue = Promise.resolve();
     this.options = { chunkSize: 180, pauseEvery: 16, pauseMs: 20, reliable: false };
     this.rxText = '';
+    this.retryMs = 1000; // first retry delay; doubles up to 15 s
+    // Coming back to the page: pick the connection back up.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.autoConnect();
+    });
   }
 
   get connected() {
     return !!(this.device && this.device.gatt.connected && this.writeChar);
   }
 
+  // 'connected' | 'connecting' | 'idle'
+  get state() {
+    if (this.connected) return 'connected';
+    return this.connecting && !this.userDisconnected ? 'connecting' : 'idle';
+  }
+
   get name() {
     return this.device?.name || 'Printer';
   }
 
+  changed() {
+    this.dispatchEvent(new Event('change'));
+  }
+
+  // Ask the user to pick a printer (must run from a tap).
   async connect({ showAll = false } = {}) {
     if (!bluetoothAvailable()) throw new Error('This browser does not support Bluetooth. On iPhone, open this page in the Bluefy app.');
     const request = showAll
@@ -76,20 +96,105 @@ export class BlePrinter extends EventTarget {
     this.log(`Looking for printers${showAll ? ' (showing all devices)' : ''}…`);
     const device = await navigator.bluetooth.requestDevice(request);
     if (this.device && this.device !== device) this.disconnect();
+    this.adopt(device);
+    this.userDisconnected = false;
+    await this.open();
+  }
+
+  adopt(device) {
     this.device = device;
     device.addEventListener('gattserverdisconnected', () => {
       if (this.device !== device) return; // an older connection we already replaced
       this.writeChar = null;
       this.notifyChar = null;
-      this.log('Printer disconnected.');
-      this.dispatchEvent(new Event('change'));
+      this.log(this.userDisconnected ? 'Printer disconnected.' : 'Lost the printer. Reconnecting when it is back in range…');
+      this.changed();
+      this.autoConnect();
     });
-    await this.open();
+  }
+
+  // After a page reload: reconnect to a printer the user picked before, without asking again.
+  // Needs getDevices(), which not every browser has.
+  async restore(saved) {
+    if (!saved || this.device || !bluetoothAvailable()) return false;
+    if (typeof navigator.bluetooth.getDevices !== 'function') {
+      this.log('This browser cannot reconnect to a remembered printer by itself. Tap Connect once.');
+      return false;
+    }
+    let devices = [];
+    try {
+      devices = await navigator.bluetooth.getDevices();
+    } catch (e) {
+      this.log(`Could not look up remembered printers (${e.message}).`);
+      return false;
+    }
+    const device = devices.find((d) => d.id === saved.id) || devices.find((d) => saved.name && d.name === saved.name);
+    if (!device) {
+      this.log(`${saved.name || 'The printer'} is not remembered by this browser any more. Tap Connect once.`);
+      return false;
+    }
+    this.log(`Remembered ${device.name || 'printer'}. Connecting when it is on and nearby…`);
+    this.adopt(device);
+    this.autoConnect();
+    return true;
+  }
+
+  // Keep trying to connect to the known printer in the background until it works, the page is
+  // hidden, or the user disconnects. Safe to call any time; concurrent calls share one attempt.
+  autoConnect() {
+    if (!this.device || this.connected || this.userDisconnected) return this.connecting || Promise.resolve();
+    if (this.connecting) return this.connecting;
+    this.connecting = (async () => {
+      let delay = this.retryMs;
+      let lastError = '';
+      while (this.device && !this.connected && !this.userDisconnected && !document.hidden) {
+        try {
+          await this.waitUntilNearby();
+          if (this.userDisconnected) break;
+          await this.open();
+          if (this.userDisconnected) this.device.gatt.disconnect(); // stopped while connecting
+        } catch (e) {
+          if (e.message !== lastError) this.log(`Not connected yet: ${e.message}`);
+          lastError = e.message;
+          await sleep(delay);
+          delay = Math.min(delay * 2, this.retryMs * 15);
+        }
+      }
+    })().finally(() => {
+      this.connecting = null;
+      this.changed();
+    });
+    this.changed();
+    return this.connecting;
+  }
+
+  // Where supported, wait for the printer to advertise before connecting, instead of repeatedly
+  // attempting connections that fail while it's off or out of range.
+  async waitUntilNearby(maxWait = 30000) {
+    const device = this.device;
+    if (typeof device.watchAdvertisements !== 'function') return;
+    const stop = new AbortController();
+    try {
+      await device.watchAdvertisements({ signal: stop.signal });
+    } catch {
+      return; // not allowed here; just try connecting
+    }
+    await new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        device.removeEventListener('advertisementreceived', done);
+        resolve();
+      };
+      const timer = setTimeout(done, maxWait);
+      device.addEventListener('advertisementreceived', done);
+    });
+    stop.abort();
   }
 
   async open() {
     const device = this.device;
-    this.log(`Connecting to "${device.name || device.id}"…`);
+    const verbose = this.discovered !== device; // list services only the first time
+    if (verbose) this.log(`Connecting to "${device.name || device.id}"…`);
     const server = await device.gatt.connect();
     let services = [];
     try {
@@ -97,7 +202,7 @@ export class BlePrinter extends EventTarget {
     } catch (e) {
       this.log(`Could not list services (${e.message}).`);
     }
-    this.log(`Found ${services.length} service(s).`);
+    if (verbose) this.log(`Found ${services.length} service(s).`);
 
     const writable = [];
     const notifiable = [];
@@ -106,13 +211,13 @@ export class BlePrinter extends EventTarget {
       try {
         chars = await service.getCharacteristics();
       } catch (e) {
-        this.log(`  service ${short(service.uuid)}: can't read characteristics (${e.message})`);
+        if (verbose) this.log(`  service ${short(service.uuid)}: can't read characteristics (${e.message})`);
         continue;
       }
       for (const c of chars) {
         const p = c.properties;
         const flags = ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter((k) => p[k]);
-        this.log(`  ${short(service.uuid)} / ${short(c.uuid)}: ${flags.join(', ') || 'no flags'}`);
+        if (verbose) this.log(`  ${short(service.uuid)} / ${short(c.uuid)}: ${flags.join(', ') || 'no flags'}`);
         if (p.write || p.writeWithoutResponse) writable.push(c);
         if (p.notify || p.indicate) notifiable.push(c);
       }
@@ -128,34 +233,51 @@ export class BlePrinter extends EventTarget {
     };
     writable.sort((a, b) => rank(a) - rank(b));
     this.writeChar = writable[0];
-    this.log(`Sending data via ${short(this.writeChar.service.uuid)} / ${short(this.writeChar.uuid)}.`);
+    if (verbose) this.log(`Sending data via ${short(this.writeChar.service.uuid)} / ${short(this.writeChar.uuid)}.`);
 
     // Prefer a notify characteristic in the same service as the write characteristic.
     this.notifyChar = notifiable.find((c) => c.service.uuid === this.writeChar.service.uuid) || notifiable[0] || null;
     if (this.notifyChar) {
       try {
         await this.notifyChar.startNotifications();
-        this.notifyChar.addEventListener('characteristicvaluechanged', (e) => this.onData(e.target.value));
-        this.log(`Listening for replies on ${short(this.notifyChar.uuid)}.`);
+        if (!this.listening.has(this.notifyChar)) {
+          this.notifyChar.addEventListener('characteristicvaluechanged', (e) => this.onData(e.target.value));
+          this.listening.add(this.notifyChar);
+        }
+        if (verbose) this.log(`Listening for replies on ${short(this.notifyChar.uuid)}.`);
       } catch (e) {
-        this.log(`Could not listen for replies (${e.message}).`);
+        if (verbose) this.log(`Could not listen for replies (${e.message}).`);
         this.notifyChar = null;
       }
     }
-    this.dispatchEvent(new Event('change'));
+    this.discovered = device;
+    this.log(`Connected to ${device.name || 'printer'}.`);
+    this.changed();
   }
 
-  async ensureConnected() {
+  // Make sure we're connected before sending; waits for a background reconnect, but not forever.
+  async ensureConnected(timeoutMs = 12000) {
     if (this.connected) return;
     if (!this.device) throw new Error('Not connected to a printer.');
-    await this.open(); // reconnect to the same printer without asking again
+    this.userDisconnected = false;
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("The printer isn't responding. Make sure it's switched on and nearby, and that RLabel is closed.")), timeoutMs);
+    });
+    try {
+      await Promise.race([this.autoConnect(), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!this.connected) throw new Error("Couldn't connect to the printer.");
   }
 
   disconnect() {
-    if (this.device?.gatt.connected) this.device.gatt.disconnect();
+    this.userDisconnected = true;
+    this.device?.gatt.disconnect(); // also cancels a connection attempt still in progress
     this.writeChar = null;
     this.notifyChar = null;
-    this.dispatchEvent(new Event('change'));
+    this.changed();
   }
 
   onData(view) {
@@ -216,8 +338,23 @@ export class MockPrinter extends EventTarget {
   get connected() {
     return this.isConnected;
   }
+  get state() {
+    return this.isConnected ? 'connected' : 'idle';
+  }
   get name() {
     return 'Mock printer';
+  }
+  get device() {
+    return null;
+  }
+  async restore() {
+    return false;
+  }
+  autoConnect() {
+    return Promise.resolve();
+  }
+  async ensureConnected() {
+    if (!this.isConnected) throw new Error('Not connected to a printer.');
   }
   async connect() {
     this.isConnected = true;

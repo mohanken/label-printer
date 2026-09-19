@@ -151,6 +151,30 @@ button {
   opacity: 1;
 }
 
+.pill.connecting {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.pill.connecting .dot {
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill.connecting .dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .tabs {
   display: flex;
   gap: 2px;

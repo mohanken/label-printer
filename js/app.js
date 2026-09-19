@@ -142,20 +142,26 @@ function applyPrinterOptions() {
 applyPrinterOptions();
 
 function updateConnUI() {
-  const on = printer.connected;
+  const state = printer.state; // connected | connecting | idle
   const known = !!printer.device;
-  $('#conn-pill').classList.toggle('on', on);
-  $('#conn-label').textContent = on ? printer.name : known ? 'Reconnect' : 'Connect printer';
-  $('#conn-detail').textContent = on
-    ? `Connected to ${printer.name}.`
-    : known
-      ? `${printer.name} is disconnected. It will reconnect when you print.`
-      : 'Not connected.';
-  $('#connect-btn').hidden = on;
+  const pill = $('#conn-pill');
+  pill.classList.toggle('on', state === 'connected');
+  pill.classList.toggle('connecting', state === 'connecting');
+  $('#conn-label').textContent = { connected: printer.name, connecting: 'Connecting…' }[state] || (known ? 'Reconnect' : 'Connect printer');
+  $('#conn-detail').textContent = {
+    connected: `Connected to ${printer.name}.`,
+    connecting: `Looking for ${printer.name}. It connects by itself when it's switched on and nearby.`,
+  }[state] || (known ? `${printer.name} is disconnected.` : 'Not connected.');
+  $('#connect-btn').hidden = state !== 'idle';
   $('#connect-btn').textContent = known ? 'Reconnect' : 'Connect printer';
-  $('#disconnect-btn').hidden = !on;
+  $('#disconnect-btn').hidden = state === 'idle';
+  $('#disconnect-btn').textContent = state === 'connecting' ? 'Stop looking' : 'Disconnect';
 }
-printer.addEventListener('change', updateConnUI);
+printer.addEventListener('change', () => {
+  updateConnUI();
+  // Remember the printer so the next visit can reconnect without the Bluetooth list.
+  if (printer.connected && printer.device) store.set('lp.printer', { id: printer.device.id, name: printer.device.name || '' });
+});
 
 async function connect(showAll = false) {
   try {
@@ -168,8 +174,11 @@ async function connect(showAll = false) {
   updateConnUI();
 }
 
+// Before printing: pick a printer the first time; otherwise wait for (re)connection.
 async function ensurePrinter() {
-  if (!printer.connected && !printer.device) await printer.connect();
+  if (printer.connected) return;
+  if (!printer.device) await printer.connect();
+  else await printer.ensureConnected();
 }
 
 async function sendToPrinter(bytes) {
@@ -712,7 +721,7 @@ function initPrinterTab() {
   $('#connect-btn').addEventListener('click', () => connect(false));
   $('#connect-all-btn').addEventListener('click', () => connect(true));
   $('#disconnect-btn').addEventListener('click', () => printer.disconnect());
-  $('#conn-pill').addEventListener('click', () => (printer.connected ? showTab('printer') : connect(false)));
+  $('#conn-pill').addEventListener('click', () => (printer.state === 'idle' ? connect(false) : showTab('printer')));
 
   const sizeSel = $('#label-size');
   sizeSel.replaceChildren(...LABEL_SIZES.map((s) => new Option(s.name, s.id)));
@@ -827,6 +836,7 @@ function init() {
   initPrinterTab();
   refreshLabelSizeText();
   updateConnUI();
+  printer.restore(store.get('lp.printer', null)); // reconnect to last time's printer, if the browser allows
   showTab(store.get('lp.tab', 'ship'));
   log(`Ready${mock ? ' (mock printer)' : ''}. ${labelSizeText()}, ${settings.language.toUpperCase()}.`);
 
