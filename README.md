@@ -45,7 +45,8 @@ are in `vendor/`.
 
 ```bash
 npm start          # serves on http://localhost:8425
-npm test           # encoder round-trip tests (Node 20+)
+npm test           # unit tests (Node 20+)
+npm run stamp      # before each release: version every asset URL so phones never mix old and new files
 ```
 
 Open `http://localhost:8425/?mock` to use a fake printer, which is handy for testing without hardware.

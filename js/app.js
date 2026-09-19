@@ -1,10 +1,10 @@
-import { mmToDots, toMono, packRows, drawMono } from './raster.js';
-import { buildJob, COMMANDS, zplTestLabel } from './encoders.js';
-import { BlePrinter, MockPrinter, bluetoothAvailable } from './printer.js';
-import { openFile, previewPage, autoCrop, pageMatchesLabel, autoRotation, renderToLabel } from './importer.js';
-import { CropEditor } from './editor.js';
-import { rotatedSize, toRotated, fromRotated, labelCropAround } from './cropmath.js';
-import { DEFAULT_DESIGN, renderDesign, testDesign } from './designer.js';
+import { mmToDots, toMono, packRows, drawMono } from './raster.js?v=20260919140616';
+import { buildJob, COMMANDS, zplTestLabel } from './encoders.js?v=20260919140616';
+import { BlePrinter, MockPrinter, bluetoothAvailable } from './printer.js?v=20260919140616';
+import { openFile, previewPage, autoCrop, pageMatchesLabel, autoRotation, renderToLabel } from './importer.js?v=20260919140616';
+import { CropEditor } from './editor.js?v=20260919140616';
+import { rotatedSize, toRotated, fromRotated, labelCropAround } from './cropmath.js?v=20260919140616';
+import { DEFAULT_DESIGN, renderDesign, testDesign } from './designer.js?v=20260919140616';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -136,6 +136,7 @@ function reportError(e) {
 // Printer connection
 // ---------------------------------------------------------------------------------------------
 
+const APP_VERSION = '20260919140616'; // set by `npm run stamp` for each release
 const mock = new URLSearchParams(location.search).has('mock');
 const printer = mock ? new MockPrinter(log) : new BlePrinter(log);
 
@@ -843,7 +844,9 @@ function init() {
   updateConnUI();
   printer.restore(store.get('lp.printer', null)); // reconnect to last time's printer, if the browser allows
   showTab(store.get('lp.tab', 'ship'));
-  log(`Ready${mock ? ' (mock printer)' : ''}. ${labelSizeText()}, ${settings.language.toUpperCase()}.`);
+  log(`Ready${mock ? ' (mock printer)' : ''}. Version ${APP_VERSION}. ${labelSizeText()}, ${settings.language.toUpperCase()}.`);
+  const versionEl = $('#app-version'); // missing if a cached older page loaded this script
+  if (versionEl) versionEl.textContent = APP_VERSION;
 
   if (mock) window.__app = { printer, ship, design, settings, collectBitmaps, loadFile, showTab, editor };
 }

@@ -26,11 +26,12 @@ export const PRINTER_SERVICES = [
   '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
 ];
 
-// Write characteristics known to accept raw printer data, in order of preference.
+// Write characteristics known to accept raw printer data, in order of preference. The RP425
+// exposes several; its test prints arrive on the ISSC (Microchip) transparent UART, so it's first.
 const PREFERRED_WRITE = [
+  '49535343-8841-43f4-a8d4-ecbe34729bb3',
   u16('2af1'),
   'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f',
-  '49535343-8841-43f4-a8d4-ecbe34729bb3',
   '6e400002-b5a3-f393-e0a9-e50e24dcca9e',
   u16('ff02'),
   u16('fff2'),
@@ -41,6 +42,8 @@ const PREFERRED_WRITE = [
 const NAME_PREFIXES = ['RP', 'RT', 'Rongta', 'RONGTA', 'rongta', 'Printer', 'Label'];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Browsers report 16-bit UUIDs either in full or as 4 hex digits (Bluefy does the latter).
+const fullUuid = (uuid) => (/^[0-9a-f]{4}$/i.test(uuid) ? u16(uuid.toLowerCase()) : uuid.toLowerCase());
 const short = (uuid) => (/^0000(....)-0000-1000-8000-00805f9b34fb$/i.test(uuid) ? uuid.slice(4, 8) : uuid);
 
 export const bluetoothAvailable = () => typeof navigator !== 'undefined' && !!navigator.bluetooth;
@@ -228,7 +231,7 @@ export class BlePrinter extends EventTarget {
     }
 
     const rank = (c) => {
-      const i = PREFERRED_WRITE.indexOf(c.uuid.toLowerCase());
+      const i = PREFERRED_WRITE.indexOf(fullUuid(c.uuid));
       return (i < 0 ? 100 : i) - (c.properties.writeWithoutResponse ? 0.5 : 0);
     };
     writable.sort((a, b) => rank(a) - rank(b));
@@ -236,7 +239,8 @@ export class BlePrinter extends EventTarget {
     if (verbose) this.log(`Sending data via ${short(this.writeChar.service.uuid)} / ${short(this.writeChar.uuid)}.`);
 
     // Prefer a notify characteristic in the same service as the write characteristic.
-    this.notifyChar = notifiable.find((c) => c.service.uuid === this.writeChar.service.uuid) || notifiable[0] || null;
+    const service = fullUuid(this.writeChar.service.uuid);
+    this.notifyChar = notifiable.find((c) => fullUuid(c.service.uuid) === service) || notifiable[0] || null;
     if (this.notifyChar) {
       try {
         await this.notifyChar.startNotifications();

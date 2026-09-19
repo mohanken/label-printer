@@ -8,11 +8,11 @@
 // State: C = crop rect in rotated page units, F = frame rect in stage pixels. The page is drawn
 // so that C lands exactly on F.
 
-import { Animator } from './spring.js';
+import { Animator } from './spring.js?v=20260919140616';
 import {
   rotatedSize, toRotated, turnRect, fitAspect, coverAspect, labelCropAround, intersect,
   axisRange, clamp, clampCrop, soften, project,
-} from './cropmath.js';
+} from './cropmath.js?v=20260919140616';
 
 const MOVE = { damping: 1, response: 0.4 };
 const TURN = { damping: 0.8, response: 0.4 };

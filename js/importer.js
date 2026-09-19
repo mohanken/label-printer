@@ -1,7 +1,7 @@
 // Loads shipping labels (PDF or image), finds the label on the page, and renders it to fit
 // the physical label at printer resolution.
 
-import { whiteCanvas, findLabel, rotateCanvas } from './raster.js';
+import { whiteCanvas, findLabel, rotateCanvas } from './raster.js?v=20260919140616';
 
 // pdf.js is large, so it is only loaded the first time a PDF is opened.
 let pdfjsReady = null;

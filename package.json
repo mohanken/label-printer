@@ -5,6 +5,7 @@
   "description": "Web app for printing labels on a Rongta RP425 over Bluetooth",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "start": "python -m http.server 8425"
+    "start": "python -m http.server 8425",
+    "stamp": "node tools/stamp.mjs"
   }
 }

@@ -178,3 +178,43 @@ test('with the limit off and confirmation unticked, data streams unconfirmed', a
   assert.deepEqual([...device.modes], ['unconfirmed']);
   assert.ok(performance.now() - t0 < 150, 'no pacing when the limit is 0');
 });
+
+test('on the RP425 layout (as Bluefy reports it) the ISSC channel is chosen', async () => {
+  // Services and characteristics copied from a real RP425 diagnostics log.
+  const layout = {
+    FF00: { FF02: ['write', 'writeWithoutResponse'], FF01: ['notify'], FF03: ['notify'] },
+    FF10: { FF11: ['writeWithoutResponse', 'notify'], FF12: ['writeWithoutResponse', 'notify'] },
+    EEE0: { EEE1: ['write', 'notify'] },
+    '18F0': { '2AF1': ['write', 'writeWithoutResponse'], '2AF0': ['notify'] },
+    FEE7: { FEC7: ['write'], FEC8: ['indicate'], FEC9: ['read'] },
+    FF80: { FF82: ['write', 'writeWithoutResponse'], FF81: ['notify'] },
+    '49535343-FE7D-4AE5-8FA9-9FAFD205E455': {
+      '49535343-6DAA-4D02-ABF6-19569ACA69FE': ['write'],
+      '49535343-8841-43F4-A8D4-ECBE34729BB3': ['write', 'writeWithoutResponse'],
+      '49535343-1E4D-4BD9-BA61-23C647249616': ['notify'],
+      '49535343-ACA3-481C-91EC-D85E28A60318': ['write', 'notify'],
+    },
+  };
+  const device = fakeDevice();
+  const services = Object.entries(layout).map(([uuid, chars]) => {
+    const service = { uuid };
+    service.getCharacteristics = async () =>
+      Object.entries(chars).map(([cuuid, flags]) => ({
+        uuid: cuuid,
+        service,
+        properties: Object.fromEntries(flags.map((k) => [k, true])),
+        writeValueWithResponse: async () => {},
+        writeValueWithoutResponse: async () => {},
+        startNotifications: async () => {},
+        addEventListener() {},
+      }));
+    return service;
+  });
+  device.gatt.getPrimaryServices = async () => services;
+  bluetooth.getDevices = async () => [device];
+  const p = newPrinter();
+  await p.restore({ id: 'dev-1' });
+  await until(() => p.connected);
+  assert.equal(p.writeChar.uuid, '49535343-8841-43F4-A8D4-ECBE34729BB3');
+  assert.equal(p.notifyChar.uuid, '49535343-1E4D-4BD9-BA61-23C647249616');
+});

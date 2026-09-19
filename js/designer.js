@@ -1,6 +1,6 @@
 // Quick label designer: text with an optional QR code or barcode, auto-fitted to the label.
 
-import { whiteCanvas, rotateCanvas } from './raster.js';
+import { whiteCanvas, rotateCanvas } from './raster.js?v=20260919140616';
 
 const FONTS = {
   sans: '-apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif',
